@@ -6,10 +6,13 @@ import os
 from datetime import datetime, timedelta
 from telethon import TelegramClient, errors
 
+# Глобальный флаг для остановки бота
+stop_flag = False
+
 # Конфигурация
 CONFIG = {
-    'API_ID': 29514367,  # Ваш API ID
-    'API_HASH': 'f8c6ed30b29ca0617db6ebf66618c55d',  # Ваш API Hash
+    'API_ID': 29514367,  # Твой API ID
+    'API_HASH': 'f8c6ed30b29ca0617db6ebf66618c55d',  # Твой API Hash
     'TARGET_BOT': '@zmpgamebot',
     'NOTIFY_CHAT': 'me',  # Уведомления в личный чат
     'SESSION_NAME': 'user_session',
@@ -42,6 +45,7 @@ class ZMPGameBot:
     """Класс для автоматизации взаимодействия с ботом @zmpgamebot."""
 
     def __init__(self):
+        # Без прокси
         self.client = TelegramClient(CONFIG['SESSION_NAME'], CONFIG['API_ID'], CONFIG['API_HASH'])
         self.balance = 0
         self.loss_counts = {i: 0 for i in range(1, 7)}
@@ -64,7 +68,6 @@ class ZMPGameBot:
                     self.last_di_time = state.get('last_di_time', 0.0)
                     self.top_position = state.get('top_position', 0)
                     logger.info('ℹ️ Состояние бота загружено.')
-                    # Добавляем логирование для проверки загруженных значений
                     logger.info(f'  Загруженные значения: last_cry_time={self.last_cry_time}, last_di_time={self.last_di_time}')
             else:
                 logger.info('ℹ️ Файл состояния не найден, используются значения по умолчанию.')
@@ -206,6 +209,11 @@ class ZMPGameBot:
         logger.info('═' * 50)
 
         while True:
+            if stop_flag:
+                logger.info('🛑 Бот остановлен командой /stop.')
+                await self.client.disconnect()
+                break
+
             try:
                 now = asyncio.get_event_loop().time()
                 cry_wait = max(0, int(self.last_cry_time - now))  # Оставшееся время до /cry
@@ -304,13 +312,6 @@ class ZMPGameBot:
                                 self.log_game_result(bet, number, 'Loss')
                                 await self.send_notification(f'😞 Проиграл {bet} слёз. Баланс: {self.balance}')
                                 self.last_di_time = now + CONFIG['DEFAULT_DI_INTERVAL']
-                            elif 'Ты уже играл' in reply:
-                                wait_sec = self.parse_time_to_sec(reply) or CONFIG['DEFAULT_DI_INTERVAL']
-                                self.last_di_time = now + wait_sec
-                                logger.info(f'⏱ /di недоступен. Следующая попытка через {self.format_seconds(wait_sec)}.')
-                            else:
-                                logger.warning('❗ Неизвестный ответ на /di')
-                                await self.send_notification('⚠️ Неизвестный ответ на /di')
                             self.save_state()
                         else:
                             logger.warning('❗ Нет ответа на /di')
@@ -321,36 +322,30 @@ class ZMPGameBot:
                         await asyncio.sleep(CONFIG['RETRY_DELAY'])
                         continue
                 else:
-                    if self.balance < CONFIG['MIN_BALANCE']:
-                        logger.info(f'⚠️ Недостаточно слёз для ставки (баланс: {self.balance}, минимум: {CONFIG["MIN_BALANCE"]}).')
-                    else:
-                        logger.info(f'⏳ /di еще недоступен, осталось ждать {self.format_seconds(di_wait)}.')
+                    logger.info(f'⏳ /di еще недоступен, осталось ждать {self.format_seconds(di_wait)} или баланс {self.balance} < {CONFIG["MIN_BALANCE"]}.')
 
-                # Ожидание до следующего действия
-                sleep_time = min(cry_wait, di_wait) if cry_wait > 0 or di_wait > 0 else 60
-                logger.info(f'💤 Засыпаем на {self.format_seconds(sleep_time)} до следующего действия.')
-                await asyncio.sleep(sleep_time)
+                # Задержка перед следующей итерацией
+                await asyncio.sleep(1)
 
             except Exception as e:
-                logger.error(f'❌ Ошибка в цикле фарма: {e}')
-                await self.send_notification(f'⚠️ Ошибка в работе бота: {e}')
+                logger.error(f'❌ Критическая ошибка в цикле: {e}')
+                await self.send_notification(f'⚠️ Критическая ошибка: {e}')
                 await asyncio.sleep(CONFIG['RETRY_DELAY'])
 
     async def start(self):
         """Запускает бота."""
-        await self.client.start()
-        logger.info('✅ Бот запущен.')
-        await self.farm_cycle()
+        try:
+            await self.client.start(phone='+39 351 447 7989')  # Временная замена для ввода номера
+            logger.info('✅ Бот запущен.')
+            await self.farm_cycle()
+        except Exception as e:
+            logger.error(f'❌ Ошибка при запуске бота: {e}')
+            await self.send_notification(f'⚠️ Ошибка при запуске: {e}')
 
 async def main():
-    """Основная функция с перезапуском при сбоях."""
-    while True:
-        try:
-            bot = ZMPGameBot()
-            await bot.start()
-        except Exception as e:
-            logger.error(f'❌ Критическая ошибка, перезапуск бота: {e}')
-            await asyncio.sleep(60)
+    """Основная функция запуска."""
+    bot = ZMPGameBot()
+    await bot.start()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
