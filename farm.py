@@ -335,7 +335,7 @@ class ZMPGameBot:
     async def start(self):
         """Запускает бота."""
         try:
-            await self.client.start(phone='+39 351 447 7989')
+            await self.client.start(phone='+39 351 447 7989',
             code_callback=lambda: '73257')
             logger.info('✅ Бот запущен.')
             await self.farm_cycle()
